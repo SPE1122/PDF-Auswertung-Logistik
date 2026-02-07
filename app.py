@@ -29,14 +29,12 @@ def parse_row(line: str):
 
     # Gewichte extrahieren: Sie stehen vor den letzten 3 Tokens (H, B, L)
     # Wir suchen nach den 4 Spalten (Vorne L, Vorne R, Hinten L, Hinten R)
-    # Das PDF-Format scheint fix: Gewichte sind Spalten 10-13 im Textextrakt
     if len(main_tokens) >= 7:
         weights_raw = main_tokens[-7:-3]
         weights = []
         for w in weights_raw:
             try:
                 # Gewichte im PDF sind oft mit Punkt (z.B. 264.541)
-                # Wir entfernen evtl. Tausendertrennzeichen (Komma) falls vorhanden
                 w_clean = str(w).replace(",", "")
                 weights.append(float(w_clean))
             except:
@@ -65,17 +63,15 @@ def parse_row(line: str):
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         elif tok == "Bund" and i + 1 < limit:
+            # "Bund 1" zusammenführen
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         else:
-            # Bauteil muss entweder eine Zahl (evtl mit *) sein
-            if re.match(r"^\d+\*?$", tok):
-                elements.append(tok)
-            # Oder es ist ein Wort, das wir als Bauteil zulassen (z.B. Bund X)
-            elif tok.startswith("Bund") or tok.startswith("Einlage"):
+            # Bauteil muss entweder eine Zahl (evtl mit *) sein oder mit Bund/Einlage starten
+            if re.match(r"^\d+\*?$", tok) or tok.startswith("Bund") or tok.startswith("Einlage"):
                 elements.append(tok)
             else:
-                # Überspringe Füllwörter oder Texte zwischen den Spalten
+                # Überspringe Füllwörter
                 pass
             i += 1
 
