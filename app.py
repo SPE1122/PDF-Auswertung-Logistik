@@ -190,15 +190,15 @@ df_bauteile = df_filtered[~mask_ignorieren].copy()
 df_bauteile["Bauteil"] = df_bauteile["Bauteil_raw"]
 # df_bauteile["Bauteil_sort"] = pd.to_numeric(df_bauteile["Bauteil_raw"], errors="coerce") # Optional für numerische Sortierung
 
-    # Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
-    pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d*)")
-    df_bauteile["PB_prefix"] = pb_split["prefix"]
-    df_bauteile["PB_num"] = pd.to_numeric(pb_split["num"], errors="coerce").fillna(0)
+# Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
+pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d*)")
+df_bauteile["PB_prefix"] = pb_split["prefix"]
+df_bauteile["PB_num"] = pd.to_numeric(pb_split["num"], errors="coerce").fillna(0)
 
-    df_bauteile.sort_values(
-        by=["PB_prefix", "PB_num", "Bauteil"],
-        inplace=True
-    )
+df_bauteile.sort_values(
+    by=["PB_prefix", "PB_num", "Bauteil"],
+    inplace=True
+)
 
 # Export-Ansicht: Bauteile-Tabelle
 bauteile_export = df_bauteile[["Bauteil", "PB", "Gewicht [kg]"]].copy()
