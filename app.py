@@ -52,10 +52,15 @@ def parse_row(line: str):
     while i < limit and len(elements) < 4:
         tok = element_tokens[i]
         
-        # Ignoriere Footer-Keywords und alles danach
+        # Ignoriere Footer-Keywords und Header-Bauteile (wie 2500, 1200, EG)
         if tok in ["Ladehöhe:", "Gesammtgewicht", "ca.:", "Tonnen", "Zusätzliches", "Verlade-Material:", "Bemerkungen:", "Bund 1 Verladen"]:
             break
             
+        # Filtere typische Header-Zahlen und Begriffe (z.B. Pritschenbreite 2500, Höhe 1200, Geschoss EG)
+        if tok in ["2500", "1200", "EG", "LKW", "mm"]:
+            i += 1
+            continue
+
         if tok == ".":
             elements.append(None)
             i += 1
@@ -63,16 +68,12 @@ def parse_row(line: str):
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         elif tok == "Bund" and i + 1 < limit:
-            # "Bund 1" zusammenführen
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         else:
             # Bauteil muss entweder eine Zahl (evtl mit *) sein oder mit Bund/Einlage starten
             if re.match(r"^\d+\*?$", tok) or tok.startswith("Bund") or tok.startswith("Einlage"):
                 elements.append(tok)
-            else:
-                # Überspringe Füllwörter
-                pass
             i += 1
 
     while len(elements) < 4:
