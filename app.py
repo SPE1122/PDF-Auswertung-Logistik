@@ -50,25 +50,33 @@ def parse_row(line: str):
 
     elements = []
     i = 0
-    while i < len(element_tokens) and len(elements) < 4:
+    # Wir begrenzen die Suche nach Bauteilen auf Tokens, die VOR den Gewichtsspalten stehen könnten.
+    limit = len(element_tokens)
+    
+    while i < limit and len(elements) < 4:
         tok = element_tokens[i]
+        
+        # Ignoriere Footer-Zeilen Keywords und alles danach
+        if tok in ["Ladehöhe:", "Gesammtgewicht", "ca.:", "Tonnen", "Zusätzliches", "Verlade-Material:", "Bemerkungen:"]:
+            break
+            
         if tok == ".":
             elements.append(None)
             i += 1
-        elif tok == "Einlage" and i + 1 < len(element_tokens):
+        elif tok == "Einlage" and i + 1 < limit:
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
-        elif tok == "Bund" and i + 1 < len(element_tokens):
+        elif tok == "Bund" and i + 1 < limit:
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         else:
-            # Bauteil muss entweder eine Zahl (evtl mit *) sein oder "Bund X"
+            # Bauteil muss entweder eine Zahl (evtl mit *) sein
             if re.match(r"^\d+\*?$", tok):
                 elements.append(tok)
             elif tok.startswith("Einlage") or tok.startswith("Bund"):
                 elements.append(tok)
             else:
-                # Unbekannter Token, ignorieren um Fehler bei Verschiebungen zu vermeiden
+                # Unbekannter Token, ignorieren
                 pass
             i += 1
 
@@ -236,28 +244,28 @@ df_bauteile.sort_values(
 )
 
 # Export-Ansicht: Bauteile-Tabelle
-# Wir zeigen Bauteil_raw an, damit das "*" sichtbar bleibt
-bauteile_export = df_bauteile[["Bauteil_raw", "PB", "Gewicht [kg]", "Ist_Rohr"]].copy()
+# Wir filtern hier die 'Bund' Einträge aus der Bauteil-Liste heraus
+bauteile_export = df_bauteile[~df_bauteile["Bauteil_raw"].str.contains("Bund", case=False, na=False)].copy()
+bauteile_export = bauteile_export[["Bauteil_raw", "PB", "Gewicht [kg]", "Ist_Rohr"]]
 bauteile_export.rename(columns={"Bauteil_raw": "Bauteil"}, inplace=True)
 
 # Zusammenfassung je Pritsche
-# Wir zählen Bauteile und vermerken Bunde
-def get_summary(df):
-    # Gruppieren nach Pritsche
-    summary = df.groupby("PB").agg(
+# Wir zählen Bauteile und vermerken Bunde (aus dem ursprünglichen df_bauteile, das noch Bunde enthält)
+def get_summary(df_with_bunds, df_summary_base):
+    # Gruppieren nach Pritsche (basierend auf der gefilterten Liste für korrekte Anzahl)
+    summary = df_summary_base.groupby("PB").agg(
         Anzahl_Elemente=("Bauteil", "count"),
         Gesamtgewicht_kg=("Gewicht [kg]", "sum")
     ).reset_index()
     
-    # Bunde für jede Pritsche finden
-    # Wir filtern nach Bauteilen, die "Bund" enthalten
-    bunde_per_pb = df[df["Bauteil"].astype(str).str.contains("Bund", case=False, na=False)].groupby("PB")["Bauteil"].unique()
+    # Bunde für jede Pritsche aus dem ursprünglichen DF finden
+    bunde_per_pb = df_with_bunds[df_with_bunds["Bauteil_raw"].astype(str).str.contains("Bund", case=False, na=False)].groupby("PB")["Bauteil_raw"].unique()
     bunde_dict = bunde_per_pb.apply(lambda x: ", ".join(map(str, x))).to_dict()
     
     summary["Info"] = summary["PB"].map(bunde_dict).fillna("")
     return summary
 
-summary_per_pb = get_summary(bauteile_export)
+summary_per_pb = get_summary(df_bauteile, bauteile_export)
 
 # Gesamt-Zeile für die Anzeige (ohne Info-Text für Gesamt)
 gesamt_row = pd.DataFrame(
