@@ -189,7 +189,9 @@ st.set_page_config(
 
 st.markdown(
     """
-    # 📦 PDF Auswertung Logistik
+    # 🚛 PDF Auswertung Logistik
+    *created by SPE – 'Machs dir selbst'*
+    
     Lade einen Verladeplan als PDF hoch und erzeuge eine Excel-Auswertung
     mit Bauteilen, Pritschen und Gewichten.
     """
