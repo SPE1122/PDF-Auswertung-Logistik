@@ -186,9 +186,9 @@ df_filtered = df_all[df_all["Pritschenart"].isin(selected_pritschenarten)].copy(
 mask_ignorieren = df_filtered["Ist_Einlage"] & df_filtered["EinlageTyp"].isin(selected_einlagen)
 df_bauteile = df_filtered[~mask_ignorieren].copy()
 
-# Bauteil-Nummern als Zahlen (für Sortierung & Excel)
-df_bauteile["Bauteil"] = pd.to_numeric(df_bauteile["Bauteil_raw"], errors="coerce")
-# df_bauteile = df_bauteile.dropna(subset=["Bauteil"]) # Deaktiviert, falls Bauteile nicht rein numerisch sind
+# Bauteil-Bezeichnungen direkt übernehmen (behält führende Nullen wie 001 bei)
+df_bauteile["Bauteil"] = df_bauteile["Bauteil_raw"]
+# df_bauteile["Bauteil_sort"] = pd.to_numeric(df_bauteile["Bauteil_raw"], errors="coerce") # Optional für numerische Sortierung
 
     # Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
     pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d*)")
