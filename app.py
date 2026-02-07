@@ -34,7 +34,13 @@ def parse_row(line: str):
     if len(main_tokens) >= 7:
         weights_raw = main_tokens[-7:-3]
         try:
-            weights = list(map(float, weights_raw))
+            # Gewichte validieren: Müssen Zahlen sein
+            weights = []
+            for w in weights_raw:
+                try:
+                    weights.append(float(w))
+                except:
+                    weights.append(0.0)
         except:
             weights = [0.0] * 4
         element_tokens = main_tokens[:-7]
@@ -56,7 +62,14 @@ def parse_row(line: str):
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         else:
-            elements.append(tok)
+            # Bauteil muss entweder eine Zahl (evtl mit *) sein oder "Bund X"
+            if re.match(r"^\d+\*?$", tok):
+                elements.append(tok)
+            elif tok.startswith("Einlage") or tok.startswith("Bund"):
+                elements.append(tok)
+            else:
+                # Unbekannter Token, ignorieren um Fehler bei Verschiebungen zu vermeiden
+                pass
             i += 1
 
     while len(elements) < 4:
@@ -75,6 +88,7 @@ def extract_data_from_pdf(pdf_bytes: bytes):
     """
     records = []
     einlage_typen = set()
+    seen_parts = set() # Um Duplikate zu vermeiden
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page_index, page in enumerate(pdf.pages, start=1):
@@ -101,29 +115,17 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
             # Tabellenzeilen parsen
             for line in text.splitlines():
-                # Bauteil-Zeilen: "11", "140*", "Bund 1"
-                # Wir suchen Zeilen, die mit einer Zahl (evtl. mit *) oder "Bund" beginnen
-                # und davor optional eine Zeilennummer (1-7) + L/R haben.
-                
-                # Extrahiere Tokens
-                tokens = line.split()
-                if not tokens:
-                    continue
-
-                # Sonderfall: "Bund 1" im Text finden (unabhängig von Spalten)
-                if "Bund" in line and "1" in line:
-                    # Wir prüfen, ob "Bund 1" bereits für diese Pritsche/Seite erfasst wurde, 
-                    # um Duplikate zu vermeiden, falls es in mehreren Spalten erscheint.
-                    # Aber in der PDF-Logik fügen wir es einfach hinzu, wenn es in der Zeile steht.
-                    # Da parse_row "Bund 1" als Bauteil erkennt, regeln wir das dort.
-                    pass
-
                 # Normales Parsing der 4 Positionen
                 pairs = parse_row(line)
                 for bauteil, gewicht in pairs:
                     if bauteil is None or bauteil == ".":
                         continue
 
+                    # Eindeutiger Schlüssel pro Seite/Pritsche/Position/Name
+                    # Da wir Zeilenweise lesen, nutzen wir den Namen + Pritsche + Seite
+                    # Wir müssen vorsichtig sein, da manche Bauteile mehrfach vorkommen können
+                    # Aber in einer PDF-Zeile sind sie meist eindeutig platziert.
+                    
                     ist_einlage = isinstance(bauteil, str) and bauteil.startswith("Einlage ")
                     if ist_einlage:
                         einlage_typen.add(bauteil)
@@ -248,8 +250,9 @@ def get_summary(df):
     ).reset_index()
     
     # Bunde für jede Pritsche finden
-    bunde_per_pb = df[df["Bauteil"].str.contains("Bund", na=False)].groupby("PB")["Bauteil"].unique()
-    bunde_dict = bunde_per_pb.apply(lambda x: ", ".join(x)).to_dict()
+    # Wir filtern nach Bauteilen, die "Bund" enthalten
+    bunde_per_pb = df[df["Bauteil"].astype(str).str.contains("Bund", case=False, na=False)].groupby("PB")["Bauteil"].unique()
+    bunde_dict = bunde_per_pb.apply(lambda x: ", ".join(map(str, x))).to_dict()
     
     summary["Info"] = summary["PB"].map(bunde_dict).fillna("")
     return summary
@@ -283,11 +286,13 @@ st.subheader("Bauteile (nach Pritsche & Bauteil sortiert)")
 # Styling für Rohre (*)
 def highlight_rohr(row):
     # Nur Textfarbe rot für Bauteile mit *
-    return ['color: red' if row.Ist_Rohr else '' for _ in row.index]
+    # Wir prüfen den Bauteil-Text direkt
+    is_rohr = "*" in str(row["Bauteil"])
+    return ['color: red' if is_rohr else '' for _ in row.index]
 
 # Spalte Ist_Rohr in der Anzeige verstecken
 st.dataframe(
-    bauteile_export.drop(columns=["Ist_Rohr"]).head(500).style.apply(highlight_rohr, axis=1)
+    bauteile_export.drop(columns=["Ist_Rohr"]).head(1000).style.apply(highlight_rohr, axis=1)
 )
 
 st.subheader("Zusammenfassung je Pritsche")
