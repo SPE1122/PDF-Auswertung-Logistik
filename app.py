@@ -12,20 +12,35 @@ def parse_row(line: str):
     """
     Erwartet eine Zeile wie z.B.:
     '4 L 1 10 264.541 510.330 0.000 0.000 170 2152 5852'
+    oder '7 10 Bund 1 3 . ...'
     und gibt eine Liste von bis zu 4 Tupeln (Bauteil, Gewicht) zurück.
     """
     tokens = line.split()
-    if len(tokens) < 5:
+    if len(tokens) < 3:
         return []
 
-    # Erste beiden Tokens sind Zeilennummer + L/R
-    main_tokens = tokens[2:]
+    # Prüfen, ob die Zeile mit Zeilennummer (1-7) und optional L/R beginnt
+    if re.match(r"^[1-7]\b", tokens[0]):
+        if len(tokens) > 1 and tokens[1] in ["L", "R"]:
+            main_tokens = tokens[2:]
+        else:
+            main_tokens = tokens[1:]
+    else:
+        # Kopfzeile ohne 1-7 (z.B. Einlage 80 . 1 . ...)
+        main_tokens = tokens
 
-    # letzte 7 Tokens: 4 Gewichte + Höhe + Breite + Länge
-    if len(main_tokens) < 7:
-        return []
-    weights = list(map(float, main_tokens[-7:-3]))
-    element_tokens = main_tokens[:-7]
+    # Wir suchen die Gewichte (7 Tokens am Ende)
+    # Wenn weniger als 7 Tokens da sind, versuchen wir trotzdem Bauteile zu finden
+    if len(main_tokens) >= 7:
+        weights_raw = main_tokens[-7:-3]
+        try:
+            weights = list(map(float, weights_raw))
+        except:
+            weights = [0.0] * 4
+        element_tokens = main_tokens[:-7]
+    else:
+        weights = [0.0] * 4
+        element_tokens = main_tokens
 
     elements = []
     i = 0
@@ -35,14 +50,15 @@ def parse_row(line: str):
             elements.append(None)
             i += 1
         elif tok == "Einlage" and i + 1 < len(element_tokens):
-            # "Einlage 80" zusammenführen
+            elements.append(f"{tok} {element_tokens[i + 1]}")
+            i += 2
+        elif tok == "Bund" and i + 1 < len(element_tokens):
             elements.append(f"{tok} {element_tokens[i + 1]}")
             i += 2
         else:
             elements.append(tok)
             i += 1
 
-    # ggf. auf 4 Positionen auffüllen
     while len(elements) < 4:
         elements.append(None)
 
@@ -72,55 +88,59 @@ def extract_data_from_pdf(pdf_bytes: bytes):
                 continue
             pritsche_full = m.group(1).strip()
 
-            # "PB100 Bund 1" -> ID=PB100, Bund=Bund 1
-            # Extrahiere PB-ID (z.B. PB100)
-            m_id = re.search(r"([A-ZÄÖÜ]+\d+)", pritsche_full.replace(" ", ""))
+            # "PB 100" -> PB100
+            m_id = re.search(r"([A-ZÄÖÜ]+\s*\d+)", pritsche_full)
             if m_id:
-                pritsche_id = m_id.group(1)
+                pritsche_id = re.sub(r"\s+", "", m_id.group(1))
             else:
                 pritsche_id = pritsche_full.split()[0]
-
-            # Extrahiere Bund (z.B. Bund 1)
-            m_bund = re.search(r"(Bund\s*\d+)", pritsche_full, re.IGNORECASE)
-            bund_info = m_bund.group(1) if m_bund else None
 
             # Prefix / Pritschenart (PB, PW, ...)
             m3 = re.match(r"([A-ZÄÖÜ]+)", pritsche_id)
             pritschenart = m3.group(1) if m3 else pritsche_id
 
-            # Tabellenzeilen parsen (Zeilen, die mit "1 L", "3 R", ... beginnen)
+            # Tabellenzeilen parsen
             for line in text.splitlines():
-                if not re.match(r"[1-7]\s+[LR]\b", line):
+                # Bauteil-Zeilen: "11", "140*", "Bund 1"
+                # Wir suchen Zeilen, die mit einer Zahl (evtl. mit *) oder "Bund" beginnen
+                # und davor optional eine Zeilennummer (1-7) + L/R haben.
+                
+                # Extrahiere Tokens
+                tokens = line.split()
+                if not tokens:
                     continue
 
+                # Sonderfall: "Bund 1" im Text finden (unabhängig von Spalten)
+                if "Bund" in line and "1" in line:
+                    # Wir prüfen, ob "Bund 1" bereits für diese Pritsche/Seite erfasst wurde, 
+                    # um Duplikate zu vermeiden, falls es in mehreren Spalten erscheint.
+                    # Aber in der PDF-Logik fügen wir es einfach hinzu, wenn es in der Zeile steht.
+                    # Da parse_row "Bund 1" als Bauteil erkennt, regeln wir das dort.
+                    pass
+
+                # Normales Parsing der 4 Positionen
                 pairs = parse_row(line)
                 for bauteil, gewicht in pairs:
-                    # bauteil can be None if "." was in PDF
                     if bauteil is None or bauteil == ".":
                         continue
 
                     ist_einlage = isinstance(bauteil, str) and bauteil.startswith("Einlage ")
-                    einlage_typ = bauteil if ist_einlage else None
                     if ist_einlage:
-                        einlage_typen.add(einlage_typ)
+                        einlage_typen.add(bauteil)
 
                     records.append(
                         {
                             "Bauteil_raw": str(bauteil),
                             "PB": pritsche_id,
-                            "Bund": bund_info,
                             "Pritschenart": pritschenart,
                             "Gewicht [kg]": gewicht,
                             "Seite": page_index,
                             "Ist_Einlage": ist_einlage,
-                            "EinlageTyp": einlage_typ,
+                            "EinlageTyp": bauteil if ist_einlage else None,
                         }
                     )
 
     df = pd.DataFrame(records)
-    if not df.empty:
-        # PB + Bund für die Anzeige kombinieren
-        df["PB_Display"] = df.apply(lambda x: f"{x['PB']} {x['Bund']}" if x["Bund"] else x["PB"], axis=1)
     
     pritsche_ids = sorted(df["PB"].unique()) if not df.empty else []
     pritschenarten = sorted(df["Pritschenart"].unique()) if not df.empty else []
@@ -215,10 +235,10 @@ df_bauteile.sort_values(
 
 # Export-Ansicht: Bauteile-Tabelle
 # Wir zeigen Bauteil_raw an, damit das "*" sichtbar bleibt
-bauteile_export = df_bauteile[["Bauteil_raw", "PB_Display", "Gewicht [kg]", "Ist_Rohr"]].copy()
-bauteile_export.rename(columns={"Bauteil_raw": "Bauteil", "PB_Display": "PB"}, inplace=True)
+bauteile_export = df_bauteile[["Bauteil_raw", "PB", "Gewicht [kg]", "Ist_Rohr"]].copy()
+bauteile_export.rename(columns={"Bauteil_raw": "Bauteil"}, inplace=True)
 
-# Zusammenfassung je Pritsche (inkl. Bund)
+# Zusammenfassung je Pritsche
 summary_per_pb = (
     bauteile_export.groupby("PB")
     .agg(
@@ -252,9 +272,13 @@ st.subheader("Bauteile (nach Pritsche & Bauteil sortiert)")
 
 # Styling für Rohre (*)
 def highlight_rohr(row):
-    return ['background-color: #ffff00' if row.Ist_Rohr else '' for _ in row.index]
+    # Nur Textfarbe rot für Bauteile mit *
+    return ['color: red' if row.Ist_Rohr else '' for _ in row.index]
 
-st.dataframe(bauteile_export.head(500).style.apply(highlight_rohr, axis=1))
+# Spalte Ist_Rohr in der Anzeige verstecken
+st.dataframe(
+    bauteile_export.drop(columns=["Ist_Rohr"]).head(500).style.apply(highlight_rohr, axis=1)
+)
 
 st.subheader("Zusammenfassung je Pritsche")
 st.dataframe(summary_gesamt)
