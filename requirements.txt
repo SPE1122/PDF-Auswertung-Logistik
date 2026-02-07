@@ -2,3 +2,7 @@ streamlit
 pandas
 pdfplumber
 xlsxwriter
+pandas
+pdfplumber
+streamlit
+xlsxwriter
