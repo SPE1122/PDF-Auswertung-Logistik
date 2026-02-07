@@ -118,22 +118,32 @@ def extract_data_from_pdf(pdf_bytes: bytes):
             pritschenart = m3.group(1) if m3 else pritsche_id
 
             # Tabellenzeilen parsen
+            in_table_area = False
             for line in text.splitlines():
-                # Stoppe bei Ladehöhe (Bereichsende)
+                # Startpunkt der Tabelle: Header-Zeile mit Positionsspalten
+                if "Vorne links" in line and "Vorne rechts" in line:
+                    in_table_area = True
+                    continue
+                
+                # Endpunkt der Tabelle: Ladehöhe
                 if "Ladehöhe:" in line:
+                    in_table_area = False
                     break
 
-                # Sonderfall: "Bund 1 Verladen" als Info am Seitenende
-                if "Bund 1 Verladen" in line:
-                    records.append({
-                        "Bauteil_raw": "Bund 1",
-                        "PB": pritsche_id,
-                        "Pritschenart": pritschenart,
-                        "Gewicht [kg]": 0.0,
-                        "Seite": page_index,
-                        "Ist_Einlage": False,
-                        "EinlageTyp": None,
-                    })
+                # Nur innerhalb des Tabellenbereichs einlesen
+                if not in_table_area:
+                    # Sonderfall: "Bund 1 Verladen" kann auch außerhalb stehen
+                    if "Bund 1 Verladen" in line:
+                        records.append({
+                            "Bauteil_raw": "Bund 1",
+                            "PB": pritsche_id,
+                            "Pritschenart": pritschenart,
+                            "Gewicht [kg]": 0.0,
+                            "Seite": page_index,
+                            "Ist_Einlage": False,
+                            "EinlageTyp": None,
+                        })
+                    continue
 
                 # Normales Parsing der 4 Positionen
                 pairs = parse_row(line)
@@ -142,7 +152,7 @@ def extract_data_from_pdf(pdf_bytes: bytes):
                         continue
                     
                     # Filtere Header-Keywords und Füllwörter aus
-                    if bauteil in ["Bemerkung", "Höhe", "Breite", "Gesamtlänge", "Gewicht", "Vorne", "Hinten", "links", "rechts", "nebeneinander", "angeordnet", "Ladehöhe"]:
+                    if bauteil in ["Bemerkung", "Höhe", "Breite", "Gesamtlänge", "Gewicht", "Vorne", "Hinten", "links", "rechts", "nebeneinander", "angeordnet", "Ladehöhe", "Gewischt"]:
                         continue
 
                     ist_einlage = isinstance(bauteil, str) and bauteil.startswith("Einlage ")
