@@ -29,13 +29,16 @@ def parse_row(line: str):
 
     # Gewichte extrahieren: Sie stehen vor den letzten 3 Tokens (H, B, L)
     # Wir suchen nach den 4 Spalten (Vorne L, Vorne R, Hinten L, Hinten R)
+    # Das PDF-Format scheint fix: Gewichte sind Spalten 10-13 im Textextrakt
     if len(main_tokens) >= 7:
         weights_raw = main_tokens[-7:-3]
         weights = []
         for w in weights_raw:
             try:
                 # Gewichte im PDF sind oft mit Punkt (z.B. 264.541)
-                weights.append(float(w))
+                # Wir entfernen evtl. Tausendertrennzeichen (Komma) falls vorhanden
+                w_clean = str(w).replace(",", "")
+                weights.append(float(w_clean))
             except:
                 weights.append(0.0)
         # Bauteil-Tokens sind alles vor den Gewichten
@@ -52,7 +55,7 @@ def parse_row(line: str):
         tok = element_tokens[i]
         
         # Ignoriere Footer-Keywords und alles danach
-        if tok in ["Ladehöhe:", "Gesammtgewicht", "ca.:", "Tonnen", "Zusätzliches", "Verlade-Material:", "Bemerkungen:"]:
+        if tok in ["Ladehöhe:", "Gesammtgewicht", "ca.:", "Tonnen", "Zusätzliches", "Verlade-Material:", "Bemerkungen:", "Bund 1 Verladen"]:
             break
             
         if tok == ".":
@@ -119,6 +122,18 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
             # Tabellenzeilen parsen
             for line in text.splitlines():
+                # Sonderfall: "Bund 1" im Text finden (unabhängig von Spalten)
+                if "Bund 1 Verladen" in line:
+                    records.append({
+                        "Bauteil_raw": "Bund 1",
+                        "PB": pritsche_id,
+                        "Pritschenart": pritschenart,
+                        "Gewicht [kg]": 0.0,
+                        "Seite": page_index,
+                        "Ist_Einlage": False,
+                        "EinlageTyp": None,
+                    })
+
                 # Normales Parsing der 4 Positionen
                 pairs = parse_row(line)
                 for bauteil, gewicht in pairs:
