@@ -93,7 +93,9 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
                 pairs = parse_row(line)
                 for bauteil, gewicht in pairs:
-                    if not bauteil or bauteil == ".":
+                    # bauteil can be None if "." was in PDF, we still want to keep the position?
+                    # But the user logic was to skip it.
+                    if bauteil is None or bauteil == ".":
                         continue
 
                     ist_einlage = isinstance(bauteil, str) and bauteil.startswith("Einlage ")
@@ -186,17 +188,17 @@ df_bauteile = df_filtered[~mask_ignorieren].copy()
 
 # Bauteil-Nummern als Zahlen (für Sortierung & Excel)
 df_bauteile["Bauteil"] = pd.to_numeric(df_bauteile["Bauteil_raw"], errors="coerce")
-df_bauteile = df_bauteile.dropna(subset=["Bauteil"])
+# df_bauteile = df_bauteile.dropna(subset=["Bauteil"]) # Deaktiviert, falls Bauteile nicht rein numerisch sind
 
-# Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
-pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d+)")
-df_bauteile["PB_prefix"] = pb_split["prefix"]
-df_bauteile["PB_num"] = pd.to_numeric(pb_split["num"], errors="coerce")
+    # Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
+    pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d*)")
+    df_bauteile["PB_prefix"] = pb_split["prefix"]
+    df_bauteile["PB_num"] = pd.to_numeric(pb_split["num"], errors="coerce").fillna(0)
 
-df_bauteile.sort_values(
-    by=["PB_prefix", "PB_num", "Bauteil"],
-    inplace=True
-)
+    df_bauteile.sort_values(
+        by=["PB_prefix", "PB_num", "Bauteil"],
+        inplace=True
+    )
 
 # Export-Ansicht: Bauteile-Tabelle
 bauteile_export = df_bauteile[["Bauteil", "PB", "Gewicht [kg]"]].copy()
