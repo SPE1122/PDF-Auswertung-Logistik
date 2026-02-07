@@ -239,20 +239,30 @@ bauteile_export = df_bauteile[["Bauteil_raw", "PB", "Gewicht [kg]", "Ist_Rohr"]]
 bauteile_export.rename(columns={"Bauteil_raw": "Bauteil"}, inplace=True)
 
 # Zusammenfassung je Pritsche
-summary_per_pb = (
-    bauteile_export.groupby("PB")
-    .agg(
+# Wir zählen Bauteile und vermerken Bunde
+def get_summary(df):
+    # Gruppieren nach Pritsche
+    summary = df.groupby("PB").agg(
         Anzahl_Elemente=("Bauteil", "count"),
-        Gesamtgewicht_kg=("Gewicht [kg]", "sum"),
-    )
-    .reset_index()
-)
+        Gesamtgewicht_kg=("Gewicht [kg]", "sum")
+    ).reset_index()
+    
+    # Bunde für jede Pritsche finden
+    bunde_per_pb = df[df["Bauteil"].str.contains("Bund", na=False)].groupby("PB")["Bauteil"].unique()
+    bunde_dict = bunde_per_pb.apply(lambda x: ", ".join(x)).to_dict()
+    
+    summary["Info"] = summary["PB"].map(bunde_dict).fillna("")
+    return summary
 
+summary_per_pb = get_summary(bauteile_export)
+
+# Gesamt-Zeile für die Anzeige (ohne Info-Text für Gesamt)
 gesamt_row = pd.DataFrame(
     {
         "PB": ["Gesamt"],
         "Anzahl_Elemente": [summary_per_pb["Anzahl_Elemente"].sum()],
         "Gesamtgewicht_kg": [summary_per_pb["Gesamtgewicht_kg"].sum()],
+        "Info": [""]
     }
 )
 
