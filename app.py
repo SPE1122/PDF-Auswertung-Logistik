@@ -118,11 +118,11 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
             # Tabellenzeilen parsen
             for line in text.splitlines():
-                # Stoppe sofort, wenn Ladehöhe in der Zeile vorkommt
+                # Stoppe bei Ladehöhe (Bereichsende)
                 if "Ladehöhe:" in line:
                     break
 
-                # Sonderfall: "Bund 1 Verladen" im Text finden (unabhängig von Spalten)
+                # Sonderfall: "Bund 1 Verladen" als Info am Seitenende
                 if "Bund 1 Verladen" in line:
                     records.append({
                         "Bauteil_raw": "Bund 1",
@@ -139,12 +139,11 @@ def extract_data_from_pdf(pdf_bytes: bytes):
                 for bauteil, gewicht in pairs:
                     if bauteil is None or bauteil == ".":
                         continue
-
-                    # Eindeutiger Schlüssel pro Seite/Pritsche/Position/Name
-                    # Da wir Zeilenweise lesen, nutzen wir den Namen + Pritsche + Seite
-                    # Wir müssen vorsichtig sein, da manche Bauteile mehrfach vorkommen können
-                    # Aber in einer PDF-Zeile sind sie meist eindeutig platziert.
                     
+                    # Filtere Header-Keywords und Füllwörter aus
+                    if bauteil in ["Bemerkung", "Höhe", "Breite", "Gesamtlänge", "Gewicht", "Vorne", "Hinten", "links", "rechts", "nebeneinander", "angeordnet", "Ladehöhe"]:
+                        continue
+
                     ist_einlage = isinstance(bauteil, str) and bauteil.startswith("Einlage ")
                     if ist_einlage:
                         einlage_typen.add(bauteil)
