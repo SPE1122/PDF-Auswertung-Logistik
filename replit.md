@@ -11,12 +11,14 @@ A Streamlit-based web application for analyzing logistics PDF loading plans. Use
 
 ## How to Run
 ```
-streamlit run app.py --server.port 5000 --server.address 0.0.0.0 --server.headless true
+streamlit run app.py
 ```
 
 ## Project Structure
 - `app.py` — Main application (UI + PDF parsing logic)
 - `requirements.txt` — Python dependencies
+- `.streamlit/config.toml` — Streamlit configuration
 
 ## Recent Changes
-- 2026-02-07: Initial setup in Replit environment, configured Streamlit to run on port 5000
+- 2026-02-07: Initial setup in Replit environment
+- 2026-02-07: Configured Streamlit for deployment and cleaned up requirements.txt

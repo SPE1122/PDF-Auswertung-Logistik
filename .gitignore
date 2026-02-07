@@ -41,3 +41,6 @@ env/
 venv/
 ENV/
 .pythonlibs/
+attached_assets/
+.replit
+replit.md
