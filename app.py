@@ -118,7 +118,11 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
             # Tabellenzeilen parsen
             for line in text.splitlines():
-                # Sonderfall: "Bund 1" im Text finden (unabhängig von Spalten)
+                # Stoppe sofort, wenn Ladehöhe in der Zeile vorkommt
+                if "Ladehöhe:" in line:
+                    break
+
+                # Sonderfall: "Bund 1 Verladen" im Text finden (unabhängig von Spalten)
                 if "Bund 1 Verladen" in line:
                     records.append({
                         "Bauteil_raw": "Bund 1",
