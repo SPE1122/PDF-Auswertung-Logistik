@@ -72,15 +72,17 @@ def extract_data_from_pdf(pdf_bytes: bytes):
                 continue
             pritsche_full = m.group(1).strip()
 
-            # z.B. "PB 1", "PB 2", "PB6 Haus A2 Vordach"
-            m2 = re.search(r"([A-ZÄÖÜ]+ *\d+)", pritsche_full)
-            if m2:
-                pritsche_core_raw = m2.group(1)
+            # "PB100 Bund 1" -> ID=PB100, Bund=Bund 1
+            # Extrahiere PB-ID (z.B. PB100)
+            m_id = re.search(r"([A-ZÄÖÜ]+\d+)", pritsche_full.replace(" ", ""))
+            if m_id:
+                pritsche_id = m_id.group(1)
             else:
-                pritsche_core_raw = pritsche_full.split()[0]
+                pritsche_id = pritsche_full.split()[0]
 
-            # "PB 1" -> "PB1"
-            pritsche_id = re.sub(r"\s+", "", pritsche_core_raw)
+            # Extrahiere Bund (z.B. Bund 1)
+            m_bund = re.search(r"(Bund\s*\d+)", pritsche_full, re.IGNORECASE)
+            bund_info = m_bund.group(1) if m_bund else None
 
             # Prefix / Pritschenart (PB, PW, ...)
             m3 = re.match(r"([A-ZÄÖÜ]+)", pritsche_id)
@@ -93,8 +95,7 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
                 pairs = parse_row(line)
                 for bauteil, gewicht in pairs:
-                    # bauteil can be None if "." was in PDF, we still want to keep the position?
-                    # But the user logic was to skip it.
+                    # bauteil can be None if "." was in PDF
                     if bauteil is None or bauteil == ".":
                         continue
 
@@ -105,8 +106,9 @@ def extract_data_from_pdf(pdf_bytes: bytes):
 
                     records.append(
                         {
-                            "Bauteil_raw": bauteil,
+                            "Bauteil_raw": str(bauteil),
                             "PB": pritsche_id,
+                            "Bund": bund_info,
                             "Pritschenart": pritschenart,
                             "Gewicht [kg]": gewicht,
                             "Seite": page_index,
@@ -116,8 +118,12 @@ def extract_data_from_pdf(pdf_bytes: bytes):
                     )
 
     df = pd.DataFrame(records)
-    pritsche_ids = sorted(df["PB"].unique())
-    pritschenarten = sorted(df["Pritschenart"].unique())
+    if not df.empty:
+        # PB + Bund für die Anzeige kombinieren
+        df["PB_Display"] = df.apply(lambda x: f"{x['PB']} {x['Bund']}" if x["Bund"] else x["PB"], axis=1)
+    
+    pritsche_ids = sorted(df["PB"].unique()) if not df.empty else []
+    pritschenarten = sorted(df["Pritschenart"].unique()) if not df.empty else []
     einlage_typen = sorted(einlage_typen)
 
     return df, pritsche_ids, pritschenarten, einlage_typen
@@ -186,24 +192,33 @@ df_filtered = df_all[df_all["Pritschenart"].isin(selected_pritschenarten)].copy(
 mask_ignorieren = df_filtered["Ist_Einlage"] & df_filtered["EinlageTyp"].isin(selected_einlagen)
 df_bauteile = df_filtered[~mask_ignorieren].copy()
 
-# Bauteil-Bezeichnungen direkt übernehmen (behält führende Nullen wie 001 bei)
-df_bauteile["Bauteil"] = df_bauteile["Bauteil_raw"]
-# df_bauteile["Bauteil_sort"] = pd.to_numeric(df_bauteile["Bauteil_raw"], errors="coerce") # Optional für numerische Sortierung
+# Bauteil-Sortierung vorbereiten
+def get_sort_val(val):
+    clean = str(val).replace("*", "").strip()
+    try:
+        return float(clean)
+    except:
+        return 999999 # Text ans Ende
 
-# Pritsche in Prefix + Nummer splitten, um PB1, PB2, ... richtig zu sortieren
+df_bauteile["Bauteil_sort"] = df_bauteile["Bauteil_raw"].apply(get_sort_val)
+df_bauteile["Ist_Rohr"] = df_bauteile["Bauteil_raw"].str.contains(r"\*", na=False)
+
+# Pritsche in Prefix + Nummer splitten
 pb_split = df_bauteile["PB"].str.extract(r"(?P<prefix>[A-ZÄÖÜ]+)(?P<num>\d*)")
 df_bauteile["PB_prefix"] = pb_split["prefix"]
 df_bauteile["PB_num"] = pd.to_numeric(pb_split["num"], errors="coerce").fillna(0)
 
 df_bauteile.sort_values(
-    by=["PB_prefix", "PB_num", "Bauteil"],
+    by=["PB_prefix", "PB_num", "Bauteil_sort", "Bauteil_raw"],
     inplace=True
 )
 
 # Export-Ansicht: Bauteile-Tabelle
-bauteile_export = df_bauteile[["Bauteil", "PB", "Gewicht [kg]"]].copy()
+# Wir zeigen Bauteil_raw an, damit das "*" sichtbar bleibt
+bauteile_export = df_bauteile[["Bauteil_raw", "PB_Display", "Gewicht [kg]", "Ist_Rohr"]].copy()
+bauteile_export.rename(columns={"Bauteil_raw": "Bauteil", "PB_Display": "PB"}, inplace=True)
 
-# Zusammenfassung je Pritsche
+# Zusammenfassung je Pritsche (inkl. Bund)
 summary_per_pb = (
     bauteile_export.groupby("PB")
     .agg(
@@ -234,7 +249,12 @@ with col3:
     st.metric("Gesamtgewicht", f"{gesamt_row['Gesamtgewicht_kg'].iloc[0]:.1f} kg")
 
 st.subheader("Bauteile (nach Pritsche & Bauteil sortiert)")
-st.dataframe(bauteile_export.head(50))
+
+# Styling für Rohre (*)
+def highlight_rohr(row):
+    return ['background-color: #ffff00' if row.Ist_Rohr else '' for _ in row.index]
+
+st.dataframe(bauteile_export.head(500).style.apply(highlight_rohr, axis=1))
 
 st.subheader("Zusammenfassung je Pritsche")
 st.dataframe(summary_gesamt)
