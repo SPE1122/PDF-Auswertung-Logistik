@@ -10,10 +10,8 @@ import streamlit as st
 
 def parse_row(line: str):
     """
-    Erwartet eine Zeile wie z.B.:
-    '4 L 1 10 264.541 510.330 0.000 0.000 170 2152 5852'
-    oder '7 10 Bund 1 3 . ...'
-    und gibt eine Liste von bis zu 4 Tupeln (Bauteil, Gewicht) zurück.
+    Extrahiert Bauteile und Gewichte aus einer PDF-Zeile.
+    Bauteile stehen links, Gewichte rechts daneben.
     """
     tokens = line.split()
     if len(tokens) < 3:
@@ -29,20 +27,18 @@ def parse_row(line: str):
         # Kopfzeile ohne 1-7 (z.B. Einlage 80 . 1 . ...)
         main_tokens = tokens
 
-    # Wir suchen die Gewichte (7 Tokens am Ende)
-    # Wenn weniger als 7 Tokens da sind, versuchen wir trotzdem Bauteile zu finden
+    # Gewichte extrahieren: Sie stehen vor den letzten 3 Tokens (H, B, L)
+    # Wir suchen nach den 4 Spalten (Vorne L, Vorne R, Hinten L, Hinten R)
     if len(main_tokens) >= 7:
         weights_raw = main_tokens[-7:-3]
-        try:
-            # Gewichte validieren: Müssen Zahlen sein
-            weights = []
-            for w in weights_raw:
-                try:
-                    weights.append(float(w))
-                except:
-                    weights.append(0.0)
-        except:
-            weights = [0.0] * 4
+        weights = []
+        for w in weights_raw:
+            try:
+                # Gewichte im PDF sind oft mit Punkt (z.B. 264.541)
+                weights.append(float(w))
+            except:
+                weights.append(0.0)
+        # Bauteil-Tokens sind alles vor den Gewichten
         element_tokens = main_tokens[:-7]
     else:
         weights = [0.0] * 4
@@ -50,13 +46,12 @@ def parse_row(line: str):
 
     elements = []
     i = 0
-    # Wir begrenzen die Suche nach Bauteilen auf Tokens, die VOR den Gewichtsspalten stehen könnten.
     limit = len(element_tokens)
     
     while i < limit and len(elements) < 4:
         tok = element_tokens[i]
         
-        # Ignoriere Footer-Zeilen Keywords und alles danach
+        # Ignoriere Footer-Keywords und alles danach
         if tok in ["Ladehöhe:", "Gesammtgewicht", "ca.:", "Tonnen", "Zusätzliches", "Verlade-Material:", "Bemerkungen:"]:
             break
             
@@ -73,10 +68,11 @@ def parse_row(line: str):
             # Bauteil muss entweder eine Zahl (evtl mit *) sein
             if re.match(r"^\d+\*?$", tok):
                 elements.append(tok)
-            elif tok.startswith("Einlage") or tok.startswith("Bund"):
+            # Oder es ist ein Wort, das wir als Bauteil zulassen (z.B. Bund X)
+            elif tok.startswith("Bund") or tok.startswith("Einlage"):
                 elements.append(tok)
             else:
-                # Unbekannter Token, ignorieren
+                # Überspringe Füllwörter oder Texte zwischen den Spalten
                 pass
             i += 1
 
